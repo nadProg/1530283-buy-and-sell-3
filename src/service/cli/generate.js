@@ -1,6 +1,7 @@
-'use strict';
+"use strict";
 
-const fs = require(`fs`);
+const fs = require(`fs`).promises;
+const chalk = require(`chalk`);
 const {ExitCode} = require(`../../constants`);
 const {
   shuffle,
@@ -8,49 +9,22 @@ const {
   getRandomItem,
   getUniqueArray,
   getRandomEnumValue,
+  readContent,
 } = require(`../../utils`);
 
 const DEFAULT_COUNT = 1;
 
 const MAX_COUNT = 1000;
 
-const FILE_NAME = `mock.json`;
-
-const TITLES = [
-  `Продам книги Стивена Кинга`,
-  `Продам новую приставку Sony Playstation 5`,
-  `Продам отличную подборку фильмов на VHS`,
-  `Куплю антиквариат`,
-  `Куплю породистого кота`,
-];
-
-const SENTENCES = [
-  `Товар в отличном состоянии.`,
-  `Пользовались бережно и только по большим праздникам.`,
-  `Продаю с болью в сердце...`,
-  `Бонусом отдам все аксессуары.`,
-  `Даю недельную гарантию.`,
-  `Если товар не понравится — верну всё до последней копейки.`,
-  `Это настоящая находка для коллекционера!`,
-  `Если найдёте дешевле — сброшу цену.`,
-  `Таких предложений больше нет!`,
-  `При покупке с меня бесплатная доставка в черте города.`,
-];
-
-const CATEGORIES = [
-  `Книги`,
-  `Разное`,
-  `Посуда`,
-  `Игры`,
-  `Животные`,
-  `Журналы`,
-];
+const FILE_MOCKS_PATH = `./mocks.json`;
+const FILE_SENTENCES_PATH = `./data/sentences.txt`;
+const FILE_TITLES_PATH = `./data/titles.txt`;
+const FILE_CATEGORIES_PATH = `./data/categories.txt`;
 
 const OfferType = {
   OFFER: `offer`,
   SALE: `sale`,
 };
-
 
 const SumRestrict = {
   MIN: 1000,
@@ -68,38 +42,49 @@ const getPictureFileName = () => {
   return `item${formattedNumber}.jpg`;
 };
 
-const generateDescription = () => shuffle(SENTENCES).slice(1, 5).join(` `);
+const generateDescription = (sentences) =>
+  shuffle(sentences).slice(1, 5).join(` `);
 
-const generateOffers = (count) => (
-  Array(count).fill({}).map(() => ({
-    category: getUniqueArray(CATEGORIES),
-    description: generateDescription(),
-    picture: getPictureFileName(),
-    title: getRandomItem(TITLES),
-    type: getRandomEnumValue(OfferType),
-    sum: getRandomInt(SumRestrict.MIN, SumRestrict.MAX),
-  }))
-);
+const generateOffers = (count, categories, titles, sentences) =>
+  Array(count)
+    .fill({})
+    .map(() => ({
+      category: getUniqueArray(categories),
+      description: generateDescription(sentences),
+      picture: getPictureFileName(),
+      title: getRandomItem(titles),
+      type: getRandomEnumValue(OfferType),
+      sum: getRandomInt(SumRestrict.MIN, SumRestrict.MAX),
+    }));
 
 module.exports = {
   name: `--generate`,
-  run(args) {
+  async run(args) {
     const [count] = args;
     const parsedCount = Number.parseInt(count, 10) || DEFAULT_COUNT;
 
     if (parsedCount > MAX_COUNT) {
-      console.error(`Не больше 1000 объявлений`);
+      console.error(chalk.red(`Не больше 1000 объявлений`));
       process.exit(ExitCode.ERROR);
     }
 
-    const content = JSON.stringify(generateOffers(parsedCount), null, 2);
+    const [titles, sentences, categories] = await Promise.all([
+      readContent(FILE_TITLES_PATH),
+      readContent(FILE_SENTENCES_PATH),
+      readContent(FILE_CATEGORIES_PATH),
+    ]);
 
-    fs.writeFile(FILE_NAME, content, (err) => {
-      if (err) {
-        return console.error(`Can't write data to file...`);
-      }
+    const content = JSON.stringify(
+        generateOffers(parsedCount, categories, titles, sentences)
+    );
 
-      return console.info(`Operation success. File created.`);
-    });
-  }
+    try {
+      await fs.writeFile(FILE_MOCKS_PATH, content);
+    } catch (error) {
+      console.error(chalk.red(`Can't write data to file...`));
+      return;
+    }
+
+    console.info(chalk.green(`Operation success. File created.`));
+  },
 };
